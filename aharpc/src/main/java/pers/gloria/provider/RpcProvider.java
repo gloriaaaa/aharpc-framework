@@ -1,7 +1,10 @@
 package pers.gloria.provider;
 
 import com.google.protobuf.Descriptors;
+import com.google.protobuf.InvalidProtocolBufferException;
+import com.google.protobuf.Message;
 import com.google.protobuf.Service;
+import pers.gloria.callback.INotifyProvider;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -14,23 +17,32 @@ import java.util.Properties;
  *
  * @Author gloria
  */
-public class RpcProvider {
+public class RpcProvider implements INotifyProvider {
     private static final String SERVER_IP = "ip";
     private static final String SERVER_PORT = "port";
     private static final String ZK_SERVER = "zookeeper";
     private String serverIp;
     private int serverPort;
     private String zkServer;
+    //private byte[] responsebuf;//多线程 不对
+    private ThreadLocal<byte[]> responsebufLocal;
+    /**
+     * 包含所有的rpc服务对象和服务方法
+     */
+    private Map<String, ServiceInfo> serviceMap;
 
     /**
      * 启动Rpc站点提供服务
      */
     public void start() {
-        serviceMap.forEach((k, v)->{
-            System.out.println(k);
-            v.methodMap.forEach((a,b)->System.out.println(a));
-        });
+//        serviceMap.forEach((k, v)->{
+//            System.out.println(k);
+//            v.methodMap.forEach((a,b)->System.out.println(a));
+//        });
         System.out.println("rpc server start at " + serverIp + ":" + serverPort);
+        // 启动rpc server网络服务
+        RpcServer s = new RpcServer(this);
+        s.start(serverIp, serverPort);
     }
     /**
      * 服务方法的类型信息
@@ -43,10 +55,6 @@ public class RpcProvider {
         Service service;
         Map<String, Descriptors.MethodDescriptor> methodMap;//只是读操作，用hashmap也ok，线程
     }
-    /**
-     * 包含所有的rpc服务对象和服务方法
-     */
-    private Map<String, ServiceInfo> serviceMap;
     /**
      * 注册rpc服务方法   只要支持rpc方法的类，都实现了com.google.protobuf.Service这个接口
      * @param service
@@ -65,6 +73,41 @@ public class RpcProvider {
             si.methodMap.put(methodName, method);
         });
         serviceMap.put(serviceName, si);
+    }
+
+    /**
+     * notify方法是在多线程环境中被调用到的
+     * 接收RpcServer网络模块上报的rpc调用相关信息参数，执行具体的rpc方法调用
+     * @param serviceName
+     * @param methodName
+     * @param args
+     * @return 把rpc方法调用完成以后的响应值进行返回
+     */
+    @Override
+    public byte[] notify(String serviceName, String methodName, byte[] args) {
+        ServiceInfo si = serviceMap.get(serviceName);
+        Service service = si.service; // 获取服务对象了
+        Descriptors.MethodDescriptor method = si.methodMap.get(methodName); // 获取服务方法了
+
+        // 从args反序列化出method方法的参数 LoginRequest RegRequest
+        Message reqeust = service.getRequestPrototype(method).toBuilder().build();
+        try {
+            reqeust = reqeust.getParserForType().parseFrom(args); // 反序列化操作
+        } catch (InvalidProtocolBufferException e) {
+            e.printStackTrace();
+        }
+
+
+        /**
+         * rpc对象：service
+         * rpc对象的方法： method
+         * rpc方法的参数：request
+         * 根据method.getName()  => login
+         */
+        service.callMethod(method, null, reqeust,
+                response -> responsebufLocal.set(response.toByteArray()));
+
+        return responsebufLocal.get();
     }
 
     /**
@@ -94,25 +137,31 @@ public class RpcProvider {
             return null;
 
         }
-//        /**
-//         * 通过builder创建一个RpcProvider对象
-//         * @return
-//         */
-//        public RpcProvider build() {
-//            return INSTANCE;
-//        }
     }
 
-    private void setZkServer(String property) {
-        this.zkServer = zkServer;
-    }
+//    private void setZkServer(String property) {
+//        this.zkServer = zkServer;
+//    }
+//
+//    private void setServerPort(int parseInt) {
+//        this.zkServer = zkServer;
+//    }
+//
+//    private void setServerIp(String serverIp) {
+//        this.serverIp = serverIp;
+//    }
 
-    private void setServerPort(int parseInt) {
-        this.zkServer = zkServer;
-    }
 
-    private void setServerIp(String property) {
+    private void setServerIp(String serverIp) {
         this.serverIp = serverIp;
+    }
+
+    private void setServerPort(int serverPort) {
+        this.serverPort = serverPort;
+    }
+
+    private void setZkServer(String zkServer) {
+        this.zkServer = zkServer;
     }
 
     /**
@@ -125,5 +174,6 @@ public class RpcProvider {
 
     private RpcProvider(){
         this.serviceMap = new HashMap<>();
+        this.responsebufLocal = new ThreadLocal<>();
     }
 }

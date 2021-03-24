@@ -70,6 +70,7 @@ public class UserServiceImpl extends UserServiceProto.UserServiceRpc {
      * @param controller
      * @param request
      * @param done
+     *
      */
     @Override
     public void reg(RpcController controller, UserServiceProto.RegRequest request, RpcCallback<UserServiceProto.Response> done) {
