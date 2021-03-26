@@ -55,8 +55,6 @@ public class RpcServer {
             workerGroup.shutdownGracefully();
             mainGroup.shutdownGracefully();
         }
-
-
     }
 
     /**

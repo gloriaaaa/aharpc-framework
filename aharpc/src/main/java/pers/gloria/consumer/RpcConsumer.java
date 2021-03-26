@@ -4,6 +4,7 @@ import com.google.protobuf.*;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import pers.gloria.RpcMetaProto;
+import pers.gloria.util.ZkClientUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -12,8 +13,21 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
+import java.util.Properties;
 
 public class RpcConsumer implements RpcChannel {
+    private static final String ZK_SERVER = "zookeeper";
+    private String zkServer;
+    public RpcConsumer(String file) {
+        Properties pro = new Properties();
+        try {
+            pro.load(RpcConsumer.class.getClassLoader().getResourceAsStream(file));
+            this.zkServer = pro.getProperty(ZK_SERVER);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     /**
      * stub代理对象，需要接收一个实现了RpcChannel的对象，当用stub调用任意rpc方法的时候，
      * 全部都调用了当前这个RpcChannel的callMethod方法
@@ -32,6 +46,23 @@ public class RpcConsumer implements RpcChannel {
         Descriptors.ServiceDescriptor sd = methodDescriptor.getService();
         String serviceName = sd.getName();
         String methodName = methodDescriptor.getName();
+
+        // todo... 在zookeeper上查询serviceName-methodName在哪个主机上 ip和port
+        String ip = "";
+        int port = 0;
+        ZkClientUtils zk = new ZkClientUtils(zkServer);
+        String path = "/" + serviceName + "/" + methodName;
+        String hostStr = zk.readData(path);
+        zk.close();
+        if(hostStr == null) {
+            rpcController.setFailed("read path:" + path + " data from zk is failed!");
+            rpcCallback.run(message1);
+            return;
+        } else {
+            String[] host = hostStr.split(":");
+            ip = host[0];
+            port = Integer.parseInt(host[1]);
+        }
 
         //序列化头部信息
         RpcMetaProto.RpcMeta.Builder meta_builder = RpcMetaProto.RpcMeta.newBuilder();
@@ -78,11 +109,12 @@ public class RpcConsumer implements RpcChannel {
                 recvbuf.write(rbuf, 0, size);
                 rpcCallback.run(message1.getParserForType().parseFrom(recvbuf.toByteArray()));
             } else {
-                rpcCallback.run(message1.getParserForType().parseFrom(new byte[0]));
+                rpcCallback.run(message1.getParserForType().parseFrom(new byte[0]));//上报的是空的
             }
 
         } catch (IOException e) {
-            e.printStackTrace();
+            rpcController.setFailed("server connect error, check server!");
+            rpcCallback.run(message1);//上报的是空的
         } finally {
             try {
                 if(out != null) {

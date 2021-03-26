@@ -5,6 +5,7 @@ import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.google.protobuf.Service;
 import pers.gloria.callback.INotifyProvider;
+import pers.gloria.util.ZkClientUtils;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -39,6 +40,19 @@ public class RpcProvider implements INotifyProvider {
 //            System.out.println(k);
 //            v.methodMap.forEach((a,b)->System.out.println(a));
 //        });
+        // todo... 把service和method都往zookeeper上注册一下
+        ZkClientUtils zk = new ZkClientUtils(zkServer);
+        serviceMap.forEach((k, v)->{
+            String path = "/" + k;
+            zk.createPersistent(path, null);//永久性节点
+            v.methodMap.forEach((a, b)-> {
+                String createPath = path + "/" + a;
+                zk.createEphemeral(createPath, serverIp+":"+serverPort);//临时节点
+                // 给临时性节点添加监听器watcher
+                zk.addWatcher(createPath);
+                System.out.println("reg zk -> " + createPath);
+            });
+        });
         System.out.println("rpc server start at " + serverIp + ":" + serverPort);
         // 启动rpc server网络服务
         RpcServer s = new RpcServer(this);

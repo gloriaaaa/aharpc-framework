@@ -12,7 +12,7 @@ public class App
     {
         /**
          * 启动一个可以提供rpc远程方法调用的Server
-         * 1. 需要一个RpcProvider（nprpc提供的）对象
+         * 1. 需要一个RpcProvider（rpc框架提供的）对象
          * 2. 向RpcProvider上面注册rpc方法   UserServiceImpl.login   UserServiceImpl.reg
          * 3. 启动RpcProvider这个Server站点了  阻塞等待远程rpc方法调用请求
          */
